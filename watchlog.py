@@ -58,7 +58,7 @@ class WatchLog(watch.ProcessEvent):
 
         for dir_ in self.path_data.keys():
             for file_ in os.listdir(dir_):
-                self.do_extract(file_)
+                self.do_extract(os.path.join(dir_, file_))
 
                 # since we trigger the unzipping process via the closing of unwritable
                 # file handles, we still need a way to make sure the handle being closed
