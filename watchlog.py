@@ -9,7 +9,7 @@ import argparse
 
 import pyinotify as watch
 
-watched_events = watch.IN_CLOSE_NOWRITE
+watched_events = watch.IN_MOVED_TO
 
 watchman = watch.WatchManager()
 
@@ -68,9 +68,10 @@ class WatchLog(watch.ProcessEvent):
         #         print(os.path.join(pathlib.Path().absolute()), file_)
 
 
-    # every time an unwritable file is closed
-    # this encompasses the zip archives we are looking for
-    def process_IN_CLOSE_NOWRITE(self, event):
+    # this is how I've observed rsync copying the log files to the directory:
+    # copy a prelim dot file and write to that
+    # when done writing, move the contents of the dot file to the final file name
+    def process_IN_MOVED_TO(self, event):
         name, ext = os.path.splitext(event.pathname)
         dirname = os.path.dirname(event.pathname)
         fname_no_ext = os.path.basename(name)
