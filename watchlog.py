@@ -56,6 +56,10 @@ class WatchLog(watch.ProcessEvent):
                 # local fs via rsync, which will has to touch all pre-existing files
                 # to know not to copy over them
 
+        for dir_ in self.path_data.keys():
+            for file_ in os.listdir(dir_):
+                self.do_extract(file_)
+
                 # since we trigger the unzipping process via the closing of unwritable
                 # file handles, we still need a way to make sure the handle being closed
                 # actually needs to be unzipped
@@ -66,21 +70,17 @@ class WatchLog(watch.ProcessEvent):
         #     name, ext = os.path.splitext(file_)
         #     if name not in self.extracted_file_names and ext in self.file_ext_whitelist:
         #         print(os.path.join(pathlib.Path().absolute()), file_)
-
-
-    # this is how I've observed rsync copying the log files to the directory:
-    # copy a prelim dot file and write to that
-    # when done writing, move the contents of the dot file to the final file name
-    def process_IN_MOVED_TO(self, event):
-        name, ext = os.path.splitext(event.pathname)
-        dirname = os.path.dirname(event.pathname)
+    
+    def do_extract(self, pathname):
+        name, ext = os.path.splitext(pathname)
+        dirname = os.path.dirname(pathname)
         fname_no_ext = os.path.basename(name)
-        if ext in self.file_ext_whitelist:
+        if ext in self.file_ext_whitelist and os.path.isfile(pathname):
             # this file will be processed
             # only extract the file to the target directory
             # if it is not there already
             if name not in self.extracted_file_names:
-                with zipfile.ZipFile(event.pathname, 'r') as zref:
+                with zipfile.ZipFile(pathname, 'r') as zref:
                     with tempfile.TemporaryDirectory() as tdir:
                         zref.extractall(tdir)
                         # this should extract exactly ONE text document
@@ -93,6 +93,13 @@ class WatchLog(watch.ProcessEvent):
                                     for line in tfile:
                                         outfile.write(line)
                             self.extracted_file_names.append(name)
+
+
+    # this is how I've observed rsync copying the log files to the directory:
+    # copy a prelim dot file and write to that
+    # when done writing, move the contents of the dot file to the final file name
+    def process_IN_MOVED_TO(self, event):
+        self.do_extract(event.pathname)
 
 if __name__ == '__main__':
     handler = WatchLog()
