@@ -41,65 +41,60 @@ class WatchLog(watch.ProcessEvent):
         for x in zip(args.watch_paths, args.extract_to):
             self.path_data[pathlib.Path( x[0] )] = pathlib.Path( x[1] )
 
-        # get all text files in the extracted target directories
+        pre_file_count = 0
+        # all extract-to directories
         for dir_ in self.path_data.values():
             for file_ in os.listdir(dir_):
                 name, ext = os.path.splitext(file_)
+                fname_no_ext = os.path.basename(name)
                 # NOTE: we are assuming that when the program extracts a file to the
                 # target directory, that extracted file will be correct/fully extracted
                 if os.path.isfile(os.path.join(dir_, file_)) and ext == '.txt':
                     # add the filename of this file to the list of files
                     # that we don't need to extract again
-                    print("Adding {} to list of already extracted files".format(name))
-                    self.extracted_file_names.append(name)
-                # this list is necessary because the files are copied over to the
-                # local fs via rsync, which will has to touch all pre-existing files
-                # to know not to copy over them
+                    # print("Adding {} to list of already extracted files".format(name))
+                    self.extracted_file_names.append(fname_no_ext)
+                    pre_file_count += 1
+            print("Found {} previously-existing files in directory {} on startup".format(pre_file_count, dir_))
 
+        # all watched directories
         for dir_ in self.path_data.keys():
             for file_ in os.listdir(dir_):
-                self.do_extract(os.path.join(dir_, file_))
+                name, ext = os.path.splitext(file_)
+                fname_no_ext = os.path.basename(name)
+                # perform extraction logic if file not already in processed list
+                if fname_no_ext not in self.extracted_file_names:
+                    self.do_extract(os.path.join(dir_, file_))
 
-                # since we trigger the unzipping process via the closing of unwritable
-                # file handles, we still need a way to make sure the handle being closed
-                # actually needs to be unzipped
-        # print("Target directory contains {} file".format(len(self.extracted_file_names)))
-        # print("Checking log directory for zip files...")
-
-        # for file_ in os.listdir(self.watch_path):
-        #     name, ext = os.path.splitext(file_)
-        #     if name not in self.extracted_file_names and ext in self.file_ext_whitelist:
-        #         print(os.path.join(pathlib.Path().absolute()), file_)
-    
     def do_extract(self, pathname):
         name, ext = os.path.splitext(pathname)
         dirname = os.path.dirname(pathname)
         fname_no_ext = os.path.basename(name)
-        if ext in self.file_ext_whitelist and os.path.isfile(pathname):
-            # this file will be processed
-            # only extract the file to the target directory
-            # if it is not there already
-            if name not in self.extracted_file_names:
-                with zipfile.ZipFile(pathname, 'r') as zref:
-                    with tempfile.TemporaryDirectory() as tdir:
-                        zref.extractall(tdir)
-                        # this should extract exactly ONE text document
-                        print("+++ adding new file: {}".format(str(self.path_data[pathlib.Path(dirname)]) + '/' + fname_no_ext + '.txt'))
-                        with open( (str(self.path_data[pathlib.Path(dirname)]) + '/' + fname_no_ext + '.txt'), 'w') as outfile: # outfile has same name as zip
-                            # ...but just in case there is more than one text doc,
-                            # we will loop over them and write their lines out to the outfile
-                            for file_ in os.listdir(tdir):
-                                with open(os.path.join(tdir, file_)) as tfile:
-                                    for line in tfile:
-                                        outfile.write(line)
-                            self.extracted_file_names.append(name)
-
+        if ext in self.file_ext_whitelist \
+            and os.path.isfile(pathname):
+            # extraction logic
+            with zipfile.ZipFile(pathname, 'r') as zref:
+                with tempfile.TemporaryDirectory() as tdir:
+                    zref.extractall(tdir)
+                    # this should extract exactly ONE text document
+                    print("+++ adding new file: {}".format(str(self.path_data[pathlib.Path(dirname)]) + '/' + fname_no_ext + '.txt'))
+                    with open( (str(self.path_data[pathlib.Path(dirname)]) + '/' + fname_no_ext + '.txt'), 'w') as outfile: # outfile has same name as zip
+                        # ...but just in case there is more than one text doc,
+                        # we will loop over them and write their lines out to the outfile
+                        for file_ in os.listdir(tdir):
+                            with open(os.path.join(tdir, file_)) as tfile:
+                                for line in tfile:
+                                    outfile.write(line)
+                        self.extracted_file_names.append(fname_no_ext)
 
     # this is how I've observed rsync copying the log files to the directory:
     # copy a prelim dot file and write to that
     # when done writing, move the contents of the dot file to the final file name
     def process_IN_MOVED_TO(self, event):
-        self.do_extract(event.pathname)
+        fname_no_ext = os.path.basename(event.pathname)
+        # perform extraction logic if file not already in processed list
+        if fname_no_ext not in self.extracted_file_names:
+            self.do_extract(event.pathname)
 
 if __name__ == '__main__':
     handler = WatchLog()
@@ -108,7 +103,7 @@ if __name__ == '__main__':
     paths = tuple([str(key) for key in handler.path_data.keys()])
 
     for path in paths:
-        wdd = watchman.add_watch(path, watched_events)
+        wdd = watchman.add_watch(path, watched_events, rec=False)
 
     watches = [watch.path for watch in watchman.watches.values()]
 
